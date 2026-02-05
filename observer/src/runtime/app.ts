@@ -38,6 +38,8 @@ export class App {
   private noise = new Noise();
   private audio = new AudioEngine();
 
+  private linkJitterByView = new Map<number, { dx: number; dy: number }>();
+
   constructor(opts: AppOptions) {
     this.canvas = opts.canvas;
     const ctx = this.canvas.getContext('2d');
@@ -128,43 +130,59 @@ export class App {
 
     const locked = nowMs() < this.lockUntil;
     if (locked) {
-      overlay.textContent = ''; // no text while locked
+      overlay.textContent = '';
+      overlay.dataset.shownFor = ''; // 解除状態をリセット
       return;
     }
 
+    // ★追加：この viewIndex で既に表示済みなら何もしない
+    if (overlay.dataset.shownFor === String(this.viewIndex)) return;
+    overlay.dataset.shownFor = String(this.viewIndex);
+
     const atEnd = (this.viewIndex === this.images.length - 1);
-    const text = atEnd ? makeGibberish(18) : makeGibberish(18);
+    const text = makeGibberish(18);
+
     overlay.innerHTML = `<a href="#" id="next" style="
-      pointer-events:auto;
-      color: rgba(255,255,255,0.66);
-      text-decoration:none;
-      padding: 6px 10px;
-      border-radius: 6px;
-      background: rgba(255,255,255,0.03);
-      outline: 1px solid rgba(255,255,255,0.06);
-    ">${text}</a>`;
+    pointer-events:auto;
+    color: rgba(255,255,255,0.66);
+    text-decoration:none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.03);
+    outline: 1px solid rgba(255,255,255,0.06);
+  ">${text}</a>`;
 
-    const next = document.getElementById('next');
-    if (next) {
-      next.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        if (this.screen !== 'SITE') return;
-        if (nowMs() < this.lockUntil) return;
-
-        if (atEnd) {
-          // only option: go back to main boundary
-          this.audio.stopAmbience();
-          this.gotoMain();
-          return;
-        }
-        this.nextView();
-      }, { once: true });
+    let j = this.linkJitterByView.get(this.viewIndex);
+    if (!j) {
+      const dx = Math.round((Math.random() * 2 - 1) * 14); // -14..14
+      const dy = Math.round((Math.random() * 2 - 1) * 10); // -10..10
+      j = { dx, dy };
+      this.linkJitterByView.set(this.viewIndex, j);
     }
 
-    // subtle hint (doesn't create "goal")
     overlay.style.alignItems = 'flex-end';
     overlay.style.justifyContent = 'center';
-    overlay.style.paddingBottom = '18px';
+    overlay.style.paddingBottom = `${18 + j.dy}px`;
+    overlay.style.transform = `translateX(${j.dx}px)`;
+
+    const next = document.getElementById('next');
+    if (!next) return;
+
+    console.log('log_1'); // ← これ、もう連打されないはず
+
+    next.addEventListener('click', (ev) => {
+      console.log('log_2');
+      ev.preventDefault();
+      if (this.screen !== 'SITE') return;
+      if (nowMs() < this.lockUntil) return;
+
+      if (atEnd) {
+        this.audio.stopAmbience();
+        this.gotoMain();
+        return;
+      }
+      this.nextView();
+    });
   }
 
   private nextView() {
@@ -216,10 +234,10 @@ export class App {
     if (this.screen !== 'SITE') return;
     if (nowMs() < this.lockUntil) return;
 
-    if (e.key === ' ' || e.key === 'Enter') {
-      if (this.viewIndex >= this.images.length - 1) return;
-      this.nextView();
-    }
+    // if (e.key === ' ' || e.key === 'Enter') {
+    //   if (this.viewIndex >= this.images.length - 1) return;
+    //   this.nextView();
+    // }
   }
 
   private render() {
@@ -238,10 +256,8 @@ export class App {
     }
 
     if (this.screen === 'MAIN') {
-      // show the first view faintly behind the links (boundary "preview")
-      const img = this.images[0];
-      drawCover(this.ctx, img, w, h, 0.22);
-      this.noise.draw(this.ctx, w, h, 0.08);
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillRect(0, 0, w, h);
       return;
     }
 
@@ -281,7 +297,7 @@ function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, w: numb
   const ih = img.naturalHeight || img.height;
   if (!iw || !ih) return;
 
-  const s = Math.max(w / iw, h / ih);
+  const s = Math.min(w / iw, h / ih);
   const dw = iw * s;
   const dh = ih * s;
   const dx = (w - dw) / 2;
