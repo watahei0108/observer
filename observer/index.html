@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OBSERVER</title>
+    <meta name="color-scheme" content="dark" />
+    <style>
+      html, body { margin:0; height:100%; background:#050506; overflow:hidden; }
+      #app { position:fixed; inset:0; }
+      canvas { position:absolute; inset:0; width:100%; height:100%; image-rendering:auto; }
+      .overlay {
+        position:absolute; inset:0;
+        display:flex; align-items:center; justify-content:center;
+        pointer-events:none;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        letter-spacing: 0.12em;
+        color: rgba(255,255,255,0.72);
+        text-shadow: 0 0 12px rgba(255,255,255,0.12);
+      }
+      .links {
+        position:absolute; inset:0;
+        display:flex; flex-direction:column; gap: 14px;
+        align-items:center; justify-content:center;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+      .links a{
+        color: rgba(255,255,255,0.65);
+        text-decoration:none;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.03);
+        outline: 1px solid rgba(255,255,255,0.06);
+      }
+      .links a:active { background: rgba(255,255,255,0.06); }
+      .hint {
+        position:absolute; left:10px; bottom:10px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size:12px;
+        color: rgba(255,255,255,0.28);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="c"></canvas>
+      <div id="ui"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
