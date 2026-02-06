@@ -11,10 +11,13 @@ export class Noise {
   currentAlpha() {
     const t = nowMs();
     if (t >= this.flashUntil) return 0;
+
+    const total = 320; // flash() の目安と合わせる
     const remaining = this.flashUntil - t;
-    // stronger at start, fades out
-    const a = Math.min(1, remaining / 180);
-    return 0.45 * a;
+    const p = 1 - Math.min(1, remaining / total); // 0→1
+    // ease-out: 最初強く、後半スッと消える
+    const eased = 1 - Math.pow(1 - p, 3);
+    return 1.0 * (1 - eased);
   }
 
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, alpha: number) {

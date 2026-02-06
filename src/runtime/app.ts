@@ -7,17 +7,17 @@ type Screen = 'MAIN' | 'SITE';
 type AppOptions = { canvas: HTMLCanvasElement; ui: HTMLDivElement };
 
 const VIEW_URLS = [
-  '/views/000.jpg',
-  '/views/001.jpg',
-  '/views/002.jpg',
-  '/views/003.jpg',
-  '/views/004.jpg',
+  '/views/100.png',
+  '/views/101.png',
+  '/views/102.png',
+  '/views/103.png',
+  '/views/104.png',
 ] as const;
 
 // If you want 3 views for faster iteration, just comment-out the last 2 lines above.
 
 const LOCK_MS = 2200; // initial lock after each view loads
-const TRANSITION_MS = 320; // noise transition duration
+const TRANSITION_MS = 500; // noise transition duration
 const UNSTABLE_VIEWS = new Set<number>([2, 4]); // where the "slight abnormality" chime/noise happens
 
 export class App {
@@ -38,7 +38,13 @@ export class App {
   private noise = new Noise();
   private audio = new AudioEngine();
 
+  private linkEl: HTMLAnchorElement | null = null;
+  private linkPhase = Math.random() * Math.PI * 2;
+
+  private charPhases: number[] = [];
+
   private linkJitterByView = new Map<number, { dx: number; dy: number }>();
+
 
   constructor(opts: AppOptions) {
     this.canvas = opts.canvas;
@@ -49,7 +55,7 @@ export class App {
 
     window.addEventListener('resize', () => this.render());
     window.addEventListener('keydown', (e) => this.onKey(e));
-    window.addEventListener('pointerdown', (e) => this.onPointer(e));
+    // window.addEventListener('pointerdown', (e) => this.onPointer(e));
   }
 
   start() {
@@ -83,6 +89,7 @@ export class App {
     this.viewIndex = 0;
     this.isTransitioning = false;
     this.lockUntil = 0;
+    this.audio.stopAmbience();
 
     const gib = makeGibberishLinks(5);
     this.ui.innerHTML = `
@@ -103,6 +110,7 @@ export class App {
   private gotoSite(startIndex = 0) {
     this.ensureAudio();
     this.audio.startAmbience(); // muffled ambience on entering observer channel
+    this.audio.connectNoise(1.0);
     this.screen = 'SITE';
     this.viewIndex = clampIndex(startIndex, this.images.length);
     this.lockUntil = nowMs() + LOCK_MS;
@@ -112,7 +120,7 @@ export class App {
     this.audio.tuningChime();
 
     // Optional: a tiny visual glitch on entry
-    this.noise.flash(140);
+    this.noise.flash(1000);
 
     this.buildSiteUI();
   }
@@ -123,6 +131,7 @@ export class App {
   }
 
   private showLinkIfUnlocked() {
+
     if (this.screen !== 'SITE') return;
 
     const overlay = document.getElementById('overlay') as HTMLDivElement | null;
@@ -134,23 +143,26 @@ export class App {
       overlay.dataset.shownFor = ''; // 解除状態をリセット
       return;
     }
-
     // ★追加：この viewIndex で既に表示済みなら何もしない
     if (overlay.dataset.shownFor === String(this.viewIndex)) return;
     overlay.dataset.shownFor = String(this.viewIndex);
 
     const atEnd = (this.viewIndex === this.images.length - 1);
     const text = makeGibberish(18);
+    const spans = text
+      .split('')
+      .map(ch => `<span class="g">${ch}</span>`)
+      .join('');
 
-    overlay.innerHTML = `<a href="#" id="next" style="
-    pointer-events:auto;
-    color: rgba(255,255,255,0.66);
-    text-decoration:none;
-    padding: 6px 10px;
-    border-radius: 6px;
-    background: rgba(255,255,255,0.03);
-    outline: 1px solid rgba(255,255,255,0.06);
-  ">${text}</a>`;
+    overlay.innerHTML = `
+      <a href="#" id="next" style="
+        pointer-events:auto;
+        color: rgba(255,255,255,0.75);
+        text-decoration:none;
+        padding: 6px 10px;
+        border-radius: 6px;
+      ">${spans}</a>
+    `;
 
     let j = this.linkJitterByView.get(this.viewIndex);
     if (!j) {
@@ -162,16 +174,19 @@ export class App {
 
     overlay.style.alignItems = 'flex-end';
     overlay.style.justifyContent = 'center';
-    overlay.style.paddingBottom = `${18 + j.dy}px`;
+    overlay.style.paddingBottom = `${50 + j.dy}px`;
     overlay.style.transform = `translateX(${j.dx}px)`;
 
-    const next = document.getElementById('next');
+    const next = document.getElementById('next') as HTMLAnchorElement | null;
     if (!next) return;
+    this.linkEl = next;
 
-    console.log('log_1'); // ← これ、もう連打されないはず
+    const chars = this.linkEl.querySelectorAll('.g');
+    this.charPhases = Array.from(chars).map(
+      () => Math.random() * Math.PI * 2
+    );
 
     next.addEventListener('click', (ev) => {
-      console.log('log_2');
       ev.preventDefault();
       if (this.screen !== 'SITE') return;
       if (nowMs() < this.lockUntil) return;
@@ -201,11 +216,11 @@ export class App {
       this.lockUntil = nowMs() + LOCK_MS;
       this.isTransitioning = false;
 
-      // "abnormality" only on selected views (one-shot, quiet)
-      if (UNSTABLE_VIEWS.has(this.viewIndex)) {
-        this.audio.unstableHint();
-        this.noise.flash(160);
-      }
+      // // "abnormality" only on selected views (one-shot, quiet)
+      // if (UNSTABLE_VIEWS.has(this.viewIndex)) {
+      //   this.audio.unstableHint();
+      //   this.noise.flash(160);
+      // }
 
       this.buildSiteUI();
     }, Math.floor(TRANSITION_MS * 0.55));
@@ -270,7 +285,37 @@ export class App {
 
     // Noise overlay (time-limited flashes)
     const n = this.noise.currentAlpha();
-    if (n > 0) this.noise.draw(this.ctx, w, h, n);
+    if (n > 0) {
+      // ① ブラックアウト（暗転）
+      this.ctx.save();
+      // n=1 のとき 0.92 くらいまで暗くする（好みで調整）
+      this.ctx.globalAlpha = 0.30 * n;
+      this.ctx.fillStyle = '#000';
+      this.ctx.fillRect(0, 0, w, h);
+      this.ctx.restore();
+
+      // ② ノイズ（今のやつ）
+      this.noise.draw(this.ctx, w, h, n);
+    }
+
+    if (this.linkEl) {
+      const chars = this.linkEl.querySelectorAll<HTMLElement>('.g');
+
+      chars.forEach((el, i) => {
+        this.charPhases[i] += 0.015; // ゆっくり
+
+        const dx = Math.sin(this.charPhases[i]) * 5; // ±0.8px
+        const dy = Math.cos(this.charPhases[i] * 5) * 0.6;
+
+        el.style.transform = `translate(${dx}px, ${dy}px)`;
+      });
+
+      this.linkPhase += 0.05;
+      const alpha = 0.78 + Math.sin(this.linkPhase) * 0.07; // 基本 0.78, 揺れ ±0.07
+      this.linkEl.style.opacity = String(alpha);
+      const glow = 6 + (Math.sin(this.linkPhase) * 3); // 3〜9px
+      this.linkEl.style.textShadow = `0 0 ${glow}px rgba(0,0,0,0.0), 0 0 ${glow}px rgba(255,255,255,0.18)`;
+    }
 
     this.showLinkIfUnlocked();
   }

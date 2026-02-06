@@ -23,6 +23,36 @@ export class AudioEngine {
     return { ctx: this.ctx, master: this.master };
   }
 
+  connectNoise(duration = 1.0) {
+    this.ensure();
+    if (!this.ctx || !this.master) return;
+
+    const { ctx, master } = this.audio;
+
+    const bufferSize = Math.floor(ctx.sampleRate * 0.2);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0;
+
+    noise.connect(gain).connect(master);
+
+    const t = ctx.currentTime;
+    gain.gain.linearRampToValueAtTime(0.12, t + 0.03);
+    gain.gain.linearRampToValueAtTime(0.0, t + duration);
+
+    noise.start(t);
+    noise.stop(t + duration);
+  }
+
   startAmbience() {
     this.ensure();
     if (!this.ctx || !this.master) return;
@@ -31,28 +61,25 @@ export class AudioEngine {
 
     const { ctx, master } = this.audio;
 
-    // Procedural "muffled room" ambience:
-    // - brown-ish noise (very low)
-    // - subtle 60Hz-ish hum
-    // - lowpass filter to feel "ears covered"
     const gain = ctx.createGain();
-    gain.gain.value = 0.0; // fade in
+    gain.gain.value = 0.0;
     this.ambienceGain = gain;
 
+    // ローパス（耳を塞がれた感じ）
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = 900; // muffled
+    lp.frequency.value = 900;
     lp.Q.value = 0.7;
 
-    // Noise
+    // ブラウンノイズ（空気感）
     const noise = createBrownNoise(ctx);
     const noiseGain = ctx.createGain();
     noiseGain.gain.value = 0.12;
 
-    // Hum
+    // 低いハム音
     const hum = ctx.createOscillator();
     hum.type = 'sine';
-    hum.frequency.value = 58 + randFloat(-1.2, 1.2);
+    hum.frequency.value = 58;
     const humGain = ctx.createGain();
     humGain.gain.value = 0.05;
 
@@ -67,7 +94,7 @@ export class AudioEngine {
     hum.start();
     noise.start();
 
-    // store for stop
+    // 停止用に保持
     (gain as any).__hum = hum;
     (gain as any).__noise = noise;
     (gain as any).__lp = lp;
@@ -89,9 +116,9 @@ export class AudioEngine {
     const noise: AudioBufferSourceNode | undefined = (g as any).__noise;
 
     window.setTimeout(() => {
-      try { hum?.stop(); } catch {}
-      try { noise?.stop(); } catch {}
-      try { g.disconnect(); } catch {}
+      try { hum?.stop(); } catch { }
+      try { noise?.stop(); } catch { }
+      try { g.disconnect(); } catch { }
     }, 320);
 
     this.ambienceGain = null;
@@ -104,31 +131,25 @@ export class AudioEngine {
     if (!this.ctx || !this.master) return;
     const { ctx, master } = this.audio;
 
-    const o = ctx.createOscillator();
-    o.type = 'sine';
+    // ノイズ生成（200msくらいにすると自然）
+    const bufferSize = Math.floor(ctx.sampleRate * 0.2); // 200ms
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true; // ★これが本命
 
-    // Keep it non-musical: narrow random range, with jitter
-    const base = randFloat(540, 740);
-    o.frequency.value = base;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0.05; // 0.3だと結構強いかも（好みで）
 
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = base;
-    bp.Q.value = 9;
-
-    const g = ctx.createGain();
-    g.gain.value = 0.0;
-
-    o.connect(bp).connect(g).connect(master);
+    noise.connect(noiseGain).connect(master);
 
     const t = ctx.currentTime;
-    // very quiet envelope
-    g.gain.setValueAtTime(0.0, t);
-    g.gain.linearRampToValueAtTime(0.18, t + 0.015);
-    g.gain.linearRampToValueAtTime(0.0, t + 0.12);
-
-    o.start(t);
-    o.stop(t + 0.14);
+    noise.start(t);
+    noise.stop(t + 0.1); // 0.1秒で止める
   }
 
   // Even subtler "abnormality hint" (slightly detuned, shorter)
@@ -137,30 +158,24 @@ export class AudioEngine {
     if (!this.ctx || !this.master) return;
     const { ctx, master } = this.audio;
 
-    const o = ctx.createOscillator();
-    o.type = 'triangle';
+    // ノイズ生成
+    const bufferSize = ctx.sampleRate * 0.05; // 50ms
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
 
-    const base = randFloat(860, 980);
-    const detune = randFloat(-12, 12);
-    o.frequency.value = base;
-    o.detune.value = detune;
+    // ゲイン
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0.3; // かなり小さくてOK
 
-    const g = ctx.createGain();
-    g.gain.value = 0;
+    noise.connect(noiseGain).connect(master);
 
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 1200;
-
-    o.connect(lp).connect(g).connect(master);
-
-    const t = ctx.currentTime;
-    g.gain.setValueAtTime(0.0, t);
-    g.gain.linearRampToValueAtTime(0.12, t + 0.01);
-    g.gain.linearRampToValueAtTime(0.0, t + 0.07);
-
-    o.start(t);
-    o.stop(t + 0.09);
+    noise.start();
+    noise.stop(ctx.currentTime + 0.12);
   }
 }
 
