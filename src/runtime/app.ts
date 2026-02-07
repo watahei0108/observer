@@ -7,11 +7,11 @@ type Screen = 'MAIN' | 'SITE';
 type AppOptions = { canvas: HTMLCanvasElement; ui: HTMLDivElement };
 
 const VIEW_URLS = [
-  '/views/100.png',
-  '/views/101.png',
-  '/views/102.png',
-  '/views/103.png',
-  '/views/104.png',
+  'views/100.png',
+  'views/101.png',
+  'views/102.png',
+  'views/103.png',
+  'views/104.png',
 ] as const;
 
 // If you want 3 views for faster iteration, just comment-out the last 2 lines above.
