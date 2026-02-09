@@ -16,6 +16,8 @@ export class AudioEngine {
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.22; // global low volume
     this.master.connect(this.ctx.destination);
+
+    if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => { });
   }
 
   private get audio() {
@@ -140,10 +142,9 @@ export class AudioEngine {
     }
     const noise = ctx.createBufferSource();
     noise.buffer = buffer;
-    noise.loop = true; // ★これが本命
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.value = 0.05; // 0.3だと結構強いかも（好みで）
+    noiseGain.gain.value = 0.04; // 0.3だと結構強いかも（好みで）
 
     noise.connect(noiseGain).connect(master);
 
@@ -170,7 +171,7 @@ export class AudioEngine {
 
     // ゲイン
     const noiseGain = ctx.createGain();
-    noiseGain.gain.value = 0.3; // かなり小さくてOK
+    noiseGain.gain.value = 0.03; // かなり小さくてOK
 
     noise.connect(noiseGain).connect(master);
 

@@ -1,4 +1,4 @@
-import { clamp01, nowMs, randChoice, randInt, resizeCanvasToDisplaySize } from './util';
+import { clamp01, nowMs, randInt, resizeCanvasToDisplaySize } from './util';
 import { AudioEngine } from './audio';
 import { Noise } from './noise';
 
@@ -6,19 +6,27 @@ type Screen = 'MAIN' | 'SITE';
 
 type AppOptions = { canvas: HTMLCanvasElement; ui: HTMLDivElement };
 
-const VIEW_URLS = [
-  'views/100.png',
-  'views/101.png',
-  'views/102.png',
-  'views/103.png',
-  'views/104.png',
+const SITES = [
+  {
+    id: 'A',
+    views: ['views/A/001.png', 'views/A/002.png', 'views/A/003.png', 'views/A/004.png'],
+  },
+  {
+    id: 'B',
+    views: ['views/B/001.png', 'views/B/002.png', 'views/B/003.png', 'views/B/004.png'],
+  },
+  {
+    id: 'C',
+    views: ['views/C/001.png', 'views/C/002.png', 'views/C/003.png', 'views/C/004.png'],
+  },
 ] as const;
+
+type SiteId = (typeof SITES)[number]['id'];
 
 // If you want 3 views for faster iteration, just comment-out the last 2 lines above.
 
 const LOCK_MS = 2200; // initial lock after each view loads
 const TRANSITION_MS = 500; // noise transition duration
-const UNSTABLE_VIEWS = new Set<number>([2, 4]); // where the "slight abnormality" chime/noise happens
 
 export class App {
   private canvas: HTMLCanvasElement;
@@ -30,6 +38,7 @@ export class App {
   private loaded = false;
 
   private viewIndex = 0;
+  private siteIndex = 0;
   private lockUntil = 0;
   private isTransitioning = false;
 
@@ -55,11 +64,10 @@ export class App {
 
     window.addEventListener('resize', () => this.render());
     window.addEventListener('keydown', (e) => this.onKey(e));
-    // window.addEventListener('pointerdown', (e) => this.onPointer(e));
   }
 
   start() {
-    this.preload().then(() => {
+    this.preload(this.siteIndex).then(() => {
       this.loaded = true;
       this.gotoMain();
       this.loop();
@@ -73,9 +81,9 @@ export class App {
     this.audio.ensure();
   }
 
-  private async preload() {
-    // preload images
-    const imgs = await Promise.all(VIEW_URLS.map((u) => loadImage(u)));
+  private async preload(siteIndex: number) {
+    const site = SITES[siteIndex];
+    const imgs = await Promise.all(site.views.map((u) => loadImage(u)));
     this.images = imgs;
   }
 
@@ -86,46 +94,56 @@ export class App {
 
   private gotoMain() {
     this.screen = 'MAIN';
-    this.viewIndex = 0;
     this.isTransitioning = false;
     this.lockUntil = 0;
     this.audio.stopAmbience();
 
-    const gib = makeGibberishLinks(5);
+    const gib = makeGibberishLinks(5, 2);
     this.ui.innerHTML = `
       <div class="links">
         ${gib.map((t, i) => `<a href="#" data-go="site" data-i="${i}">${t}</a>`).join('')}
       </div>
       <div class="hint">tap / click</div>
     `;
+
+    this.viewIndex = 0;
+
     this.ui.querySelectorAll('a[data-go="site"]').forEach((a) => {
-      a.addEventListener('click', (ev) => {
+      a.addEventListener('click', async (ev) => {
         ev.preventDefault();
         const i = Number((ev.currentTarget as HTMLElement).getAttribute('data-i') ?? '0');
-        this.gotoSite(i);
+        await this.gotoSite(i);
       });
     });
   }
 
-  private gotoSite(startIndex = 0) {
+  private async gotoSite(siteI = 0) {
     this.ensureAudio();
-    this.audio.startAmbience(); // muffled ambience on entering observer channel
-    this.audio.connectNoise(1.0);
+
     this.screen = 'SITE';
-    this.viewIndex = clampIndex(startIndex, this.images.length);
+    this.siteIndex = clampIndex(siteI, SITES.length);
+
+    // ★ここで旧表示を無効化
+    this.viewIndex = 0;
+    this.images = [];          // ←これが効く
+    this.isTransitioning = true; // 任意：黒/ノイズ側に寄せるなら
     this.lockUntil = nowMs() + LOCK_MS;
+
+    this.buildSiteUI();        // 任意：先にUIだけ作る場合
+
+    await this.preload(this.siteIndex);
+
     this.isTransitioning = false;
 
-    // Entrance "tuning" (a minimal chime)
+    this.audio.startAmbience();
+    this.audio.connectNoise(1.0);
     this.audio.tuningChime();
-
-    // Optional: a tiny visual glitch on entry
     this.noise.flash(1000);
-
-    this.buildSiteUI();
   }
 
+
   private buildSiteUI() {
+    this.linkEl = null;
     // UI is hidden until lock ends. After that, show the single gibberish link.
     this.ui.innerHTML = `<div class="overlay" id="overlay"></div>`;
   }
@@ -140,7 +158,6 @@ export class App {
     const locked = nowMs() < this.lockUntil;
     if (locked) {
       overlay.textContent = '';
-      overlay.dataset.shownFor = ''; // 解除状態をリセット
       return;
     }
     // ★追加：この viewIndex で既に表示済みなら何もしない
@@ -215,25 +232,8 @@ export class App {
       this.viewIndex = to;
       this.lockUntil = nowMs() + LOCK_MS;
       this.isTransitioning = false;
-
-      // // "abnormality" only on selected views (one-shot, quiet)
-      // if (UNSTABLE_VIEWS.has(this.viewIndex)) {
-      //   this.audio.unstableHint();
-      //   this.noise.flash(160);
-      // }
-
       this.buildSiteUI();
     }, Math.floor(TRANSITION_MS * 0.55));
-  }
-
-  private onPointer(_e: PointerEvent) {
-    if (this.screen === 'MAIN') return; // links handle
-    if (this.screen !== 'SITE') return;
-
-    // Minimal: tap anywhere after unlock triggers "next"
-    if (nowMs() < this.lockUntil) return;
-    if (this.viewIndex >= this.images.length - 1) return;
-    this.nextView();
   }
 
   private onKey(e: KeyboardEvent) {
@@ -248,11 +248,6 @@ export class App {
 
     if (this.screen !== 'SITE') return;
     if (nowMs() < this.lockUntil) return;
-
-    // if (e.key === ' ' || e.key === 'Enter') {
-    //   if (this.viewIndex >= this.images.length - 1) return;
-    //   this.nextView();
-    // }
   }
 
   private render() {
@@ -276,8 +271,13 @@ export class App {
       return;
     }
 
-    // SITE screen
     const img = this.images[this.viewIndex];
+    if (!img) {
+      // 黒塗り（or ノイズだけ）
+      this.ctx.fillRect(0, 0, w, h);
+      return;
+    }
+
     drawCover(this.ctx, img, w, h, 1.0);
 
     // A subtle vignette to feel "looking through"
@@ -304,7 +304,7 @@ export class App {
       chars.forEach((el, i) => {
         this.charPhases[i] += 0.015; // ゆっくり
 
-        const dx = Math.sin(this.charPhases[i]) * 5; // ±0.8px
+        const dx = Math.sin(this.charPhases[i]) * 5;
         const dy = Math.cos(this.charPhases[i] * 5) * 0.6;
 
         el.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -362,12 +362,20 @@ function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function makeGibberishLinks(n: number): string[] {
+
+// リンク生成
+function makeGibberishLinks(n: number, kind: number): string[] {
   const out: string[] = [];
-  for (let i = 0; i < n; i++) out.push(makeGibberish(randInt(10, 22)));
+
+  if (kind === 1) {
+    for (let i = 0; i < n; i++) out.push(makeGibberish(randInt(10, 22)));
+  } else {
+    for (let i = 0; i < n; i++) out.push(makeId(5));
+  }
   return out;
 }
 
+// リンクラベル生成（文字化け）
 function makeGibberish(len: number): string {
   const chars = '░▒▓█▚▞▙▟▛▜┼┿╂╋╳╱╲╳⌁⌂⌇⌗⌥⌘⌬⍜⍝⍟⍠⍢⍣⍥⍦⍧⍨⍩';
   const more = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -378,3 +386,17 @@ function makeGibberish(len: number): string {
   }
   return s;
 }
+
+// リンクラベル生成（観測地点ID）
+function makeId(len: number): string {
+  const chars = '1234567890';
+  const pool = (Math.random() < 0.6) ? chars : (chars);
+  let s = '';
+  for (let i = 0; i < len; i++) {
+    s += pool[Math.floor(Math.random() * pool.length)];
+  }
+  const res = '[' + s + ']';
+  return res;
+}
+
+
